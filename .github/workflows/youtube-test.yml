@@ -1,15 +1,20 @@
-name: Private YouTube upload test
+name: YouTube upload test
 on:
   workflow_dispatch:
     inputs:
       post_id:
-        description: 'ID of the latest @ptencoff video approved for this private test'
+        description: 'ID of the video currently shown on GitHub Pages'
         required: true
         type: number
+      visibility:
+        description: 'Choose who can watch the uploaded video'
+        type: choice
+        default: private
+        options: [private, public]
 permissions:
   contents: read
 concurrency:
-  group: youtube-private-test
+  group: youtube-upload-test
   cancel-in-progress: false
 jobs:
   upload:
@@ -19,10 +24,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Test private upload to Filkina_Gramata
+      - name: Upload from GitHub Pages to Filkina_Gramata
         env:
+          VISIBILITY: ${{ inputs.visibility }}
           POST_ID: ${{ inputs.post_id }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-        run: python3 youtube_test.py "$POST_ID"
+        run: python3 youtube_test.py "$POST_ID" --visibility "$VISIBILITY"

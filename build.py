@@ -12,5 +12,6 @@ if post is None:
 page = Template((ROOT / "page.html").read_text(encoding="utf-8"))
 output = ROOT / "site"
 output.mkdir(exist_ok=True)
-(output / "index.html").write_text(page.substitute(media_url=escape(post["media"], quote=True)), encoding="utf-8")
+html = page.substitute(media_url=escape(post["media"], quote=True), post_id=post["id"])
+(output / "index.html").write_text(html, encoding="utf-8")
 print(post["post"])
