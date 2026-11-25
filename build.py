@@ -1,3 +1,4 @@
+from html import escape
 from pathlib import Path
 from string import Template
 
@@ -11,5 +12,5 @@ if post is None:
 page = Template((ROOT / "page.html").read_text(encoding="utf-8"))
 output = ROOT / "site"
 output.mkdir(exist_ok=True)
-(output / "index.html").write_text(page.substitute(post_id=post["id"]), encoding="utf-8")
+(output / "index.html").write_text(page.substitute(media_url=escape(post["media"], quote=True)), encoding="utf-8")
 print(post["post"])
