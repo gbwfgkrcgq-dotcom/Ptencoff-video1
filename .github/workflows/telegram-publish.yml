@@ -8,7 +8,7 @@ on:
         description: 'publish sends the latest video; recovery options require checking the channel first'
         type: choice
         default: publish
-        options: [publish, confirm_sent, clear_pending]
+        options: [publish, preview_caption, confirm_sent, clear_pending]
 permissions:
   contents: write
 concurrency:

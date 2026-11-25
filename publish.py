@@ -1,4 +1,5 @@
 import argparse
+from html import unescape
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ CHANNEL = "ptencoff"
 STATE_REF = "refs/heads/telegram-publish-state"
 STATE_FILE = "state.json"
 MAX_BYTES = 50_000_000
+TREND_URL = "https://trends24.in/russia/"
 
 
 def git(*args, data=None, check=True):
@@ -43,13 +45,35 @@ def record_state(previous, sent, pending):
     return revision
 
 
-def send_video(token, chat, path):
+def video_caption():
+    try:
+        page = subprocess.run(
+            ["curl", "--fail", "--silent", "--show-error", "--max-time", "10",
+             "--max-filesize", "2000000", TREND_URL],
+            text=True, encoding="utf-8", capture_output=True, check=True, timeout=12,
+        ).stdout
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return "Видос топ"
+    names = re.findall(r"""<a\b[^>]*\bclass=(?:"trend-link"|'trend-link'|trend-link(?=[\s>]))[^>]*>([^<]+)</a>""", page)
+    tags = {}
+    for name in names:
+        tag = unescape(name).strip()
+        if re.fullmatch(r"#[\w]{1,64}", tag):
+            tags.setdefault(tag.casefold(), tag)
+        if len(tags) == 5:
+            break
+    if not tags:
+        return "Видос топ"
+    return "Видос топ, а актуальное ниже\n\n" + " ".join(tags.values())
+
+
+def send_video(token, chat, path, caption):
     # Supply the token to curl via stdin so it does not appear in process arguments.
     config = f'url = "https://api.telegram.org/bot{token}/sendVideo"\n'
     result = subprocess.run(
         ["curl", "--silent", "--show-error", "--max-time", "240", "--config", "-",
          "--form-string", f"chat_id={chat}", "--form", f"video=@{path};type=video/mp4",
-         "--form-string", "supports_streaming=true"],
+         "--form-string", "supports_streaming=true", "--form-string", f"caption={caption}"],
         input=config, text=True, capture_output=True, timeout=250,
     )
     if result.returncode != 0:
@@ -64,6 +88,9 @@ def send_video(token, chat, path):
 
 
 def publish(mode):
+    if mode == "preview_caption":
+        print(video_caption())
+        return
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat:
@@ -99,8 +126,9 @@ def publish(mode):
         path = save_video(post, CHANNEL, Path(directory))
         if path.stat().st_size > MAX_BYTES:
             raise RuntimeError(f"Пост #{post_id} превышает лимит 50 МБ для Bot API.")
+        caption = video_caption()
         reserved = record_state(revision, last_sent, post_id)
-        reply = send_video(token, chat, path)
+        reply = send_video(token, chat, path, caption)
         if reply.get("ok") is True:
             record_state(reserved, post_id, None)
             print(f"Видео из исходного поста #{post_id} опубликовано.")
@@ -114,7 +142,7 @@ def publish(mode):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["publish", "confirm_sent", "clear_pending"])
+    parser.add_argument("mode", choices=["publish", "preview_caption", "confirm_sent", "clear_pending"])
     args = parser.parse_args()
     try:
         publish(args.mode)
