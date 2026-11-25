@@ -1,11 +1,13 @@
-name: YouTube upload test
+name: Publish video to YouTube
 on:
+  schedule:
+    - cron: '23 */2 * * *'
   workflow_dispatch:
     inputs:
       post_id:
-        description: 'ID of the video currently shown on GitHub Pages'
-        required: true
-        type: number
+        description: 'Optional ID of the video currently shown on GitHub Pages'
+        required: false
+        type: string
       visibility:
         description: 'Choose who can watch the uploaded video'
         type: choice
@@ -15,8 +17,13 @@ on:
         description: 'Optional YouTube title'
         type: string
         required: false
+      mode:
+        description: 'Recovery options require checking YouTube Studio first'
+        type: choice
+        default: upload
+        options: [upload, confirm_sent, clear_pending]
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: youtube-upload-test
   cancel-in-progress: false
@@ -26,14 +33,22 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
+      - name: Configure publication state author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: Upload from GitHub Pages to Filkina_Gramata
         env:
-          VISIBILITY: ${{ inputs.visibility }}
+          VISIBILITY: ${{ inputs.visibility || 'public' }}
           TITLE: ${{ inputs.title }}
           POST_ID: ${{ inputs.post_id }}
+          MODE: ${{ inputs.mode || 'upload' }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-        run: python3 youtube_test.py "$POST_ID" --visibility "$VISIBILITY" --title "$TITLE"
+        run: |
+          args=(--visibility "$VISIBILITY" --title "$TITLE" --mode "$MODE")
+          if [[ -n "$POST_ID" ]]; then
+            args+=("$POST_ID")
+          fi
+          python3 youtube_test.py "${args[@]}"

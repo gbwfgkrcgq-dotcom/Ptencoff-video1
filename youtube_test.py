@@ -5,10 +5,12 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, build_opener
 
+from publication_state import load_state, record_state
 from telegram import NoRedirect, SOURCE_CHANNEL, allowed_media, save_video
 
 SOURCE_PAGE = "https://gbwfgkrcgq-dotcom.github.io/Ptencoff-video1/"
@@ -17,6 +19,7 @@ API = "https://www.googleapis.com/youtube/v3"
 UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
 OAUTH = "https://oauth2.googleapis.com/token"
 HTTP = build_opener(NoRedirect())
+STATE_REF = "refs/heads/youtube-publish-state-" + SOURCE_CHANNEL
 
 
 class PublishedPlayer(HTMLParser):
@@ -29,8 +32,8 @@ class PublishedPlayer(HTMLParser):
             self.videos.append(dict(attrs))
 
 
-def page_video(post_id):
-    url = SOURCE_PAGE + "?" + urlencode({"source": SOURCE_CHANNEL, "youtube-test": post_id})
+def page_video(post_id=None):
+    url = SOURCE_PAGE + "?" + urlencode({"source": SOURCE_CHANNEL, "check": time.time_ns()})
     with HTTP.open(url, timeout=20) as response:
         html = response.read(100_001)
     player = PublishedPlayer()
@@ -38,12 +41,15 @@ def page_video(post_id):
     if len(player.videos) != 1:
         raise RuntimeError("На странице GitHub Pages должен быть один плеер.")
     item = player.videos[0]
-    if item.get("data-source") != SOURCE_CHANNEL or item.get("data-post-id") != str(post_id):
+    page_post = item.get("data-post-id", "")
+    if item.get("data-source") != SOURCE_CHANNEL or not page_post.isdecimal():
+        raise RuntimeError("Плеер GitHub Pages не показывает текущий канал-источник.")
+    if post_id is not None and page_post != str(post_id):
         raise RuntimeError("На странице GitHub Pages пока нет указанного видео.")
     source = item.get("src") or ""
     if not allowed_media(source):
         raise RuntimeError("Плеер GitHub Pages не содержит ожидаемого адреса MP4.")
-    return {"id": post_id, "media": source}
+    return {"id": int(page_post), "media": source}
 
 
 def access_token():
@@ -57,7 +63,7 @@ def access_token():
         return json.load(response)["access_token"]
 
 
-def upload_video(token, path, visibility, title):
+def upload_video(token, path, visibility, title, before_send=None):
     headers = {"Authorization": "Bearer " + token}
     profile = Request(API + "/channels?part=id&mine=true", headers=headers)
     with HTTP.open(profile, timeout=20) as response:
@@ -90,6 +96,8 @@ def upload_video(token, path, visibility, title):
 
     # Keep the OAuth token and upload session out of process arguments.
     curl_config = f'url = "{location}"\nheader = "Authorization: Bearer {token}"\n'
+    if before_send is not None:
+        before_send()
     upload = subprocess.run(
         ["curl", "--fail-with-body", "--silent", "--show-error", "--max-time", "360",
          "--config", "-", "--header", "Content-Type: video/mp4", "--upload-file", str(path)],
@@ -103,19 +111,52 @@ def upload_video(token, path, visibility, title):
     print("YouTube Studio: https://studio.youtube.com/video/" + result["id"] + "/edit")
 
 
+def publish(options):
+    if options.mode != "upload":
+        revision, state = load_state(STATE_REF)
+        pending = state["pending"]
+        if pending is not None:
+            last_sent = pending if options.mode == "confirm_sent" else state["sent"]
+            record_state(STATE_REF, revision, last_sent, None)
+        return
+
+    post = page_video(options.post_id)
+    post_id = post["id"]
+    reservation = None
+    before_send = None
+    if options.visibility == "public":
+        revision, state = load_state(STATE_REF)
+        if state["pending"] is not None:
+            raise RuntimeError(
+                f"Отправка видео #{state['pending']} не подтверждена. Проверьте YouTube Studio "
+                "и выберите confirm_sent или clear_pending."
+            )
+        if post_id <= state["sent"]:
+            print(f"Видео #{post_id} уже опубликовано на YouTube.")
+            return
+
+        def reserve():
+            nonlocal reservation
+            reservation = record_state(STATE_REF, revision, state["sent"], post_id)
+
+        before_send = reserve
+
+    token = access_token()
+    with tempfile.TemporaryDirectory(prefix="youtube-upload-") as folder:
+        path = save_video(post, SOURCE_CHANNEL, Path(folder))
+        upload_video(token, path, options.visibility, options.title.strip() or f"Видео {post_id}", before_send)
+    if reservation is not None:
+        record_state(STATE_REF, reservation, post_id, None)
+
+
 def main():
     args = argparse.ArgumentParser()
-    args.add_argument("post_id", type=int, help=f"Номер поста в @{SOURCE_CHANNEL}")
+    args.add_argument("post_id", type=int, nargs="?", help=f"Номер поста в @{SOURCE_CHANNEL}")
     args.add_argument("--visibility", choices=["private", "public"], default="private")
     args.add_argument("--title", default="")
-    options = args.parse_args()
-    post_id = options.post_id
+    args.add_argument("--mode", choices=["upload", "confirm_sent", "clear_pending"], default="upload")
     try:
-        token = access_token()
-        post = page_video(post_id)
-        with tempfile.TemporaryDirectory(prefix="youtube-test-") as folder:
-            path = save_video(post, SOURCE_CHANNEL, Path(folder))
-            upload_video(token, path, options.visibility, options.title.strip() or f"Видео {post_id}")
+        publish(args.parse_args())
     except HTTPError as error:
         args.exit(1, f"Google или Telegram отклонил запрос: HTTP {error.code}.\n")
     except RuntimeError as error:

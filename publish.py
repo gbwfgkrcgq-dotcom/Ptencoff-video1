@@ -8,44 +8,15 @@ import subprocess
 import tempfile
 from xml.etree import ElementTree
 
+from publication_state import load_state, record_state
 from telegram import SOURCE_CHANNEL, latest, save_video
 
 STATE_REF = "refs/heads/telegram-publish-state"
 if SOURCE_CHANNEL != "ptencoff":
     STATE_REF += "-" + SOURCE_CHANNEL
-STATE_FILE = "state.json"
 MAX_BYTES = 50_000_000
 TREND_URL = "https://trends24.in/russia/"
 TREND_RSS = "https://trends.google.com/trending/rss?geo=RU"
-
-
-def git(*args, data=None, check=True):
-    return subprocess.run(
-        ["git", *args], input=data, text=True, capture_output=True, check=check
-    )
-
-
-def load_state():
-    branch = git("ls-remote", "--exit-code", "origin", STATE_REF, check=False)
-    if branch.returncode == 2:
-        return None, {"sent": 0, "pending": None}
-    if branch.returncode != 0:
-        raise RuntimeError("Не удалось проверить ветку состояния.")
-    git("fetch", "--no-tags", "origin", STATE_REF)
-    revision = git("rev-parse", "FETCH_HEAD").stdout.strip()
-    return revision, json.loads(git("show", f"{revision}:{STATE_FILE}").stdout)
-
-
-def record_state(previous, sent, pending):
-    content = json.dumps({"sent": sent, "pending": pending}) + "\n"
-    blob = git("hash-object", "-w", "--stdin", data=content).stdout.strip()
-    tree = git("mktree", data=f"100644 blob {blob}\t{STATE_FILE}\n").stdout.strip()
-    args = ["commit-tree", tree, "-m", "Update Telegram publication status"]
-    if previous:
-        args.extend(["-p", previous])
-    revision = git(*args).stdout.strip()
-    git("push", f"--force-with-lease={STATE_REF}:{previous or ''}", "origin", f"{revision}:{STATE_REF}")
-    return revision
 
 
 def fetch_trends(url):
@@ -123,14 +94,14 @@ def publish(mode, expected_post=None):
     if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", token) or not valid_channel:
         raise RuntimeError("Проверьте формат токена и числового ID канала.")
 
-    revision, state = load_state()
+    revision, state = load_state(STATE_REF)
     last_sent = state["sent"]
     pending = state["pending"]
     if mode != "publish":
         if pending is None:
             print("Публикаций с неизвестным результатом нет.")
             return
-        record_state(revision, pending if mode == "confirm_sent" else last_sent, None)
+        record_state(STATE_REF, revision, pending if mode == "confirm_sent" else last_sent, None)
         return
     if pending is not None:
         raise RuntimeError(
@@ -150,15 +121,15 @@ def publish(mode, expected_post=None):
         if path.stat().st_size > MAX_BYTES:
             raise RuntimeError(f"Пост #{post_id} превышает лимит 50 МБ для Bot API.")
         caption = video_caption()
-        reserved = record_state(revision, last_sent, post_id)
+        reserved = record_state(STATE_REF, revision, last_sent, post_id)
         reply = send_video(token, chat, path, caption)
         if reply.get("ok") is True:
-            record_state(reserved, post_id, None)
+            record_state(STATE_REF, reserved, post_id, None)
             print(f"Видео из исходного поста #{post_id} опубликовано.")
             return
         code = reply.get("error_code")
         if reply.get("ok") is False and isinstance(code, int) and 400 <= code < 500:
-            record_state(reserved, last_sent, None)
+            record_state(STATE_REF, reserved, last_sent, None)
             raise RuntimeError(f"Telegram отклонил публикацию (код {code}).")
         raise RuntimeError("Telegram не подтвердил публикацию. Проверьте канал перед повтором.")
 
