@@ -30,6 +30,6 @@ python3 -m http.server 8766 --bind 127.0.0.1 --directory site
 
 ## Приватная тестовая загрузка на YouTube
 
-В Google Cloud включите YouTube Data API v3 и создайте OAuth-клиент для настольного приложения. При входе в @Generator_yomora выдайте разрешения `youtube.upload` и `youtube.readonly` и запросите офлайн-доступ. Храните ID клиента, секрет клиента и refresh token в секретах GitHub `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` и `YOUTUBE_REFRESH_TOKEN`. При статусе OAuth-приложения Testing токен внешнего пользователя обычно истекает через семь дней.
+В Google Cloud включите YouTube Data API v3 и создайте OAuth-клиент для настольного приложения. При входе в @Filkina_Gramata выдайте разрешения `youtube.upload` и `youtube.readonly` и запросите офлайн-доступ. Храните ID клиента, секрет клиента и refresh token в секретах GitHub `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` и `YOUTUBE_REFRESH_TOKEN`. При статусе OAuth-приложения Testing токен внешнего пользователя обычно истекает через семь дней.
 
 Запускайте **Private YouTube upload test → Run workflow** с номером согласованного тестового видео из @ptencoff, пока это последний доступный ролик канала. Загрузка создаёт приватное видео. Перед загрузкой проверяется ID канала, после неё проверяется приватный режим. Расписание для YouTube подключается отдельно после проверки.

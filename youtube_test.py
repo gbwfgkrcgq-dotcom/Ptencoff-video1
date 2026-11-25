@@ -11,7 +11,7 @@ from urllib.request import Request, build_opener
 from telegram import NoRedirect, latest, save_video
 
 SOURCE = "ptencoff"
-TARGET = "UCtrJinITCp7CpFtHSK9Go7w"
+TARGET = "UC8t5d8k9otR3-sR3y8n35iw"
 API = "https://www.googleapis.com/youtube/v3"
 UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
 OAUTH = "https://oauth2.googleapis.com/token"
@@ -35,7 +35,7 @@ def private_upload(token, post_id, path):
     with HTTP.open(profile, timeout=20) as response:
         channels = json.load(response)["items"]
     if {channel["id"] for channel in channels} != {TARGET}:
-        raise RuntimeError("Google OAuth не указывает однозначно на @Generator_yomora.")
+        raise RuntimeError("Google OAuth не указывает однозначно на @Filkina_Gramata.")
 
     size = path.stat().st_size
     data = {

@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Test private upload to Generator_yomora
+      - name: Test private upload to Filkina_Gramata
         env:
           POST_ID: ${{ inputs.post_id }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
