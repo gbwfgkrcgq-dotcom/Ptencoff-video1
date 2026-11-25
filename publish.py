@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from xml.etree import ElementTree
 
 from telegram import latest, save_video
 
@@ -14,6 +15,7 @@ STATE_REF = "refs/heads/telegram-publish-state"
 STATE_FILE = "state.json"
 MAX_BYTES = 50_000_000
 TREND_URL = "https://trends24.in/russia/"
+TREND_RSS = "https://trends.google.com/trending/rss?geo=RU"
 
 
 def git(*args, data=None, check=True):
@@ -45,23 +47,41 @@ def record_state(previous, sent, pending):
     return revision
 
 
-def video_caption():
+def fetch_trends(url):
     try:
-        page = subprocess.run(
-            ["curl", "--fail", "--silent", "--show-error", "--max-time", "10",
-             "--max-filesize", "2000000", TREND_URL],
+        result = subprocess.run(
+            ["curl", "--fail", "--silent", "--show-error", "--location", "--max-redirs", "3",
+             "--proto-redir", "=https", "--max-time", "10", "--max-filesize", "2000000", url],
             text=True, encoding="utf-8", capture_output=True, check=True, timeout=12,
-        ).stdout
+        )
     except (OSError, subprocess.SubprocessError, UnicodeError):
-        return "Видос топ"
+        return ""
+    return result.stdout
+
+
+def video_caption():
+    page = fetch_trends(TREND_URL)
     names = re.findall(r"""<a\b[^>]*\bclass=(?:"trend-link"|'trend-link'|trend-link(?=[\s>]))[^>]*>([^<]+)</a>""", page)
     tags = {}
     for name in names:
         tag = unescape(name).strip()
-        if re.fullmatch(r"#[\w]{1,64}", tag):
+        if re.fullmatch(r"#\w{1,64}", tag):
             tags.setdefault(tag.casefold(), tag)
         if len(tags) == 5:
             break
+    if len(tags) < 5:
+        rss = fetch_trends(TREND_RSS)
+        try:
+            titles = ElementTree.fromstring(rss).findall("./channel/item/title")
+        except ElementTree.ParseError:
+            titles = []
+        for title in titles:
+            name = "_".join(re.findall(r"[^\W_]+", title.text or ""))
+            if 0 < len(name) <= 64:
+                tag = "#" + name
+                tags.setdefault(tag.casefold(), tag)
+            if len(tags) == 5:
+                break
     if not tags:
         return "Видос топ"
     return "Видос топ, а актуальное ниже\n\n" + " ".join(tags.values())
