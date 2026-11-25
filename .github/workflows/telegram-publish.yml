@@ -1,0 +1,32 @@
+name: Publish video to Telegram
+on:
+  schedule:
+    - cron: '23,53 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'publish sends the latest video; recovery options require checking the channel first'
+        type: choice
+        default: publish
+        options: [publish, confirm_sent, clear_pending]
+permissions:
+  contents: write
+concurrency:
+  group: telegram-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure publication state author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Check and publish
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MODE: ${{ inputs.mode || 'publish' }}
+        run: python3 publish.py "$MODE"
