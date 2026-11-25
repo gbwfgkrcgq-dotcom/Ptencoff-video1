@@ -71,7 +71,8 @@ def publish(mode):
             print("Публикация ожидает настройки секретов GitHub.")
             return
         raise RuntimeError("Добавьте секреты TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID.")
-    if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", token) or not re.fullmatch(r"-100[0-9]+", chat):
+    valid_channel = re.fullmatch(r"-[0-9]{13}", chat) and -1997852516352 <= int(chat) <= -1000000000001
+    if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", token) or not valid_channel:
         raise RuntimeError("Проверьте формат токена и числового ID канала.")
 
     revision, state = load_state()
