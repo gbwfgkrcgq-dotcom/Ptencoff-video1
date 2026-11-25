@@ -8,10 +8,11 @@ import subprocess
 import tempfile
 from xml.etree import ElementTree
 
-from telegram import latest, save_video
+from telegram import SOURCE_CHANNEL, latest, save_video
 
-CHANNEL = "ptencoff"
 STATE_REF = "refs/heads/telegram-publish-state"
+if SOURCE_CHANNEL != "ptencoff":
+    STATE_REF += "-" + SOURCE_CHANNEL
 STATE_FILE = "state.json"
 MAX_BYTES = 50_000_000
 TREND_URL = "https://trends24.in/russia/"
@@ -107,7 +108,7 @@ def send_video(token, chat, path, caption):
     return reply
 
 
-def publish(mode):
+def publish(mode, expected_post=None):
     if mode == "preview_caption":
         print(video_caption())
         return
@@ -136,14 +137,16 @@ def publish(mode):
             f"Исходный пост #{pending} уже отправлялся, но результат неизвестен. "
             "Проверьте канал и выберите confirm_sent или clear_pending."
         )
-    post = latest(CHANNEL)
+    post = latest(SOURCE_CHANNEL)
+    if expected_post is not None and (not post or post["id"] != expected_post):
+        raise RuntimeError("Последний ролик в источнике отличается от указанного.")
     if not post or post["id"] <= last_sent:
         print("Новых доступных видео нет.")
         return
 
     post_id = post["id"]
     with tempfile.TemporaryDirectory(prefix="telegram-") as directory:
-        path = save_video(post, CHANNEL, Path(directory))
+        path = save_video(post, SOURCE_CHANNEL, Path(directory))
         if path.stat().st_size > MAX_BYTES:
             raise RuntimeError(f"Пост #{post_id} превышает лимит 50 МБ для Bot API.")
         caption = video_caption()
@@ -163,9 +166,10 @@ def publish(mode):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=["publish", "preview_caption", "confirm_sent", "clear_pending"])
+    parser.add_argument("--post-id", type=int)
     args = parser.parse_args()
     try:
-        publish(args.mode)
+        publish(args.mode, args.post_id)
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
         if isinstance(error, RuntimeError):
             parser.exit(1, f"{error}\n")

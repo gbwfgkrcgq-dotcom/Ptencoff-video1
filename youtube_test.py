@@ -9,9 +9,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, build_opener
 
-from telegram import NoRedirect, allowed_media, save_video
+from telegram import NoRedirect, SOURCE_CHANNEL, allowed_media, save_video
 
-SOURCE = "ptencoff"
 SOURCE_PAGE = "https://gbwfgkrcgq-dotcom.github.io/Ptencoff-video1/"
 TARGET = "UC8t5d8k9otR3-sR3y8n35iw"
 API = "https://www.googleapis.com/youtube/v3"
@@ -31,14 +30,17 @@ class PublishedPlayer(HTMLParser):
 
 
 def page_video(post_id):
-    url = SOURCE_PAGE + "?" + urlencode({"youtube-test": post_id})
+    url = SOURCE_PAGE + "?" + urlencode({"source": SOURCE_CHANNEL, "youtube-test": post_id})
     with HTTP.open(url, timeout=20) as response:
         html = response.read(100_001)
     player = PublishedPlayer()
     player.feed(html.decode("utf-8"))
-    if len(player.videos) != 1 or player.videos[0].get("data-post-id") != str(post_id):
+    if len(player.videos) != 1:
+        raise RuntimeError("На странице GitHub Pages должен быть один плеер.")
+    item = player.videos[0]
+    if item.get("data-source") != SOURCE_CHANNEL or item.get("data-post-id") != str(post_id):
         raise RuntimeError("На странице GitHub Pages пока нет указанного видео.")
-    source = player.videos[0].get("src") or ""
+    source = item.get("src") or ""
     if not allowed_media(source):
         raise RuntimeError("Плеер GitHub Pages не содержит ожидаемого адреса MP4.")
     return {"id": post_id, "media": source}
@@ -55,7 +57,7 @@ def access_token():
         return json.load(response)["access_token"]
 
 
-def upload_video(token, post_id, path, visibility):
+def upload_video(token, path, visibility, title):
     headers = {"Authorization": "Bearer " + token}
     profile = Request(API + "/channels?part=id&mine=true", headers=headers)
     with HTTP.open(profile, timeout=20) as response:
@@ -65,7 +67,7 @@ def upload_video(token, post_id, path, visibility):
 
     size = path.stat().st_size
     data = {
-        "snippet": {"title": f"Проверка загрузки {post_id}", "categoryId": "22"},
+        "snippet": {"title": title, "categoryId": "22"},
         "status": {"privacyStatus": visibility},
     }
     start = Request(
@@ -103,16 +105,17 @@ def upload_video(token, post_id, path, visibility):
 
 def main():
     args = argparse.ArgumentParser()
-    args.add_argument("post_id", type=int, help="Номер согласованного тестового поста в @ptencoff")
+    args.add_argument("post_id", type=int, help=f"Номер поста в @{SOURCE_CHANNEL}")
     args.add_argument("--visibility", choices=["private", "public"], default="private")
+    args.add_argument("--title", default="")
     options = args.parse_args()
     post_id = options.post_id
     try:
         token = access_token()
         post = page_video(post_id)
         with tempfile.TemporaryDirectory(prefix="youtube-test-") as folder:
-            path = save_video(post, SOURCE, Path(folder))
-            upload_video(token, post_id, path, options.visibility)
+            path = save_video(post, SOURCE_CHANNEL, Path(folder))
+            upload_video(token, path, options.visibility, options.title.strip() or f"Видео {post_id}")
     except HTTPError as error:
         args.exit(1, f"Google или Telegram отклонил запрос: HTTP {error.code}.\n")
     except RuntimeError as error:

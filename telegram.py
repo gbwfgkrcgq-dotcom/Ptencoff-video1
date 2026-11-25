@@ -13,6 +13,9 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
+SOURCE_CHANNEL = "voinaga"
+
+
 class Preview(HTMLParser):
     def __init__(self, channel):
         super().__init__()

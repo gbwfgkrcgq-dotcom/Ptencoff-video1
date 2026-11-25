@@ -11,6 +11,10 @@ on:
         type: choice
         default: private
         options: [private, public]
+      title:
+        description: 'Optional YouTube title'
+        type: string
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -27,8 +31,9 @@ jobs:
       - name: Upload from GitHub Pages to Filkina_Gramata
         env:
           VISIBILITY: ${{ inputs.visibility }}
+          TITLE: ${{ inputs.title }}
           POST_ID: ${{ inputs.post_id }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-        run: python3 youtube_test.py "$POST_ID" --visibility "$VISIBILITY"
+        run: python3 youtube_test.py "$POST_ID" --visibility "$VISIBILITY" --title "$TITLE"
